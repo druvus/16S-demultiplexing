@@ -1,0 +1,137 @@
+#!/usr/bin/env python
+
+from Bio.SeqIO.QualityIO import FastqGeneralIterator #Biopython 1.51 or later
+import sys, os
+
+##########################################################
+#
+# Change the following settings to suit your needs
+#
+input_read_filename = sys.argv[1]
+input_forward_filename = sys.argv[2]
+input_reverse_filename = sys.argv[3]
+
+output_paired_read_filename = input_read_filename + "_synced.fq"
+output_paired_forward_filename = input_forward_filename + "_synced.fq"
+output_paired_reverse_filename = input_reverse_filename + "_synced.fq"
+output_orphan_filename = input_read_filename + "_discarded.fq"
+
+read_suffix = False
+f_suffix = False
+r_suffix = False
+
+##########################################################
+
+if read_suffix:
+    read_suffix_crop = -len(read_suffix)
+    def read_name(title):
+        """Remove the suffix from a forward read name."""
+        name = title.split()[0]
+        assert name.endswith(read_suffix)
+        return name[:read_suffix_crop]
+else:
+    def read_name(title):
+        return title.split(' ')[0]
+
+if f_suffix:
+    f_suffix_crop = -len(f_suffix)
+    def f_name(title):
+        """Remove the suffix from a forward read name."""
+        name = title.split()[0]
+        assert name.endswith(f_suffix)
+        return name[:f_suffix_crop]
+else:
+    def f_name(title):
+        return title.split(' ')[0]
+
+if r_suffix:
+    r_suffix_crop = -len(r_suffix)
+    def r_name(title):
+        """Remove the suffix from a reverse read name."""
+        name = title.split()[0]
+        assert name.endswith(r_suffix)
+        return name[:r_suffix_crop]
+else:
+    def r_name(title):
+        return title.split(' ')[0]
+
+print "Scaning read file to build list of names..."    
+reverse_ids = set()
+read_ids = set()
+paired_ids = set()
+for title, seq, qual in FastqGeneralIterator(open(input_read_filename)):
+    read_ids.add(r_name(title))
+
+dictReadtitle = {};
+dictReadseq = {};
+dictReadqual = {};
+dictFtitle = {};
+dictFseq = {};
+dictFqual = {};
+dictRtitle = {};
+dictRseq = {};
+dictRqual = {};
+
+
+print "Processing forward index (I1) file..."
+forward_handle = open(output_paired_forward_filename, "w")
+orphan_handle = open(output_orphan_filename, "w")
+for title, seq, qual in FastqGeneralIterator(open(input_forward_filename)):
+    name = f_name(title)
+    if name in read_ids:
+        #Paired
+        paired_ids.add(name)
+        #reverse_ids.remove(name) #frees a little memory
+        #forward_handle.write("@%s\n%s\n+\n%s\n" % (title, seq, qual))
+        dictFtitle[name] = name #title
+        dictFseq[name] = seq
+        dictFqual[name] = qual
+    else:
+        #Orphan
+        orphan_handle.write("@%s\n%s\n+\n%s\n" % (title, seq, qual))
+
+#del reverse_ids #frees memory, although we won't need more now
+
+print "Processing reverse index (I2)file..."
+reverse_handle = open(output_paired_reverse_filename, "w")
+
+for title, seq, qual in FastqGeneralIterator(open(input_reverse_filename)):
+    name = r_name(title)
+    if name in read_ids:
+        #Paired
+        paired_ids.add(name)
+        #reverse_ids.remove(name) #frees a little memory
+        #forward_handle.write("@%s\n%s\n+\n%s\n" % (title, seq, qual))
+        dictRtitle[name] = name #title
+        dictRseq[name] = seq
+        dictRqual[name] = qual
+    else:
+        #Orphan
+        orphan_handle.write("@%s\n%s\n+\n%s\n" % (title, seq, qual))
+
+#del reverse_ids #frees memory, although we won't need more now
+
+
+print "Processing read file..."
+read_handle = open(output_paired_read_filename, "w")
+for title, seq, qual in FastqGeneralIterator(open(input_read_filename)):
+    name = read_name(title)
+    if name not in paired_ids:
+        #Orphan
+        orphan_handle.write("@%s\n%s\n+\n%s\n" % (title, seq, qual))
+    else:
+        #Paired
+        dictReadtitle[name] = title
+        dictReadseq[name] = seq
+        dictReadqual[name] = qual
+
+
+for name in dictRtitle:
+    forward_handle.write("@%s\n%s\n+\n%s\n" % (dictFtitle[name], dictFseq[name], dictFqual[name]))
+    reverse_handle.write("@%s\n%s\n+\n%s\n" % (dictRtitle[name], dictRseq[name], dictRqual[name]))
+    read_handle.write("@%s\n%s\n+\n%s\n" % (dictReadtitle[name], dictReadseq[name], dictReadqual[name]))
+forward_handle.close()
+orphan_handle.close()
+reverse_handle.close()
+
+print "Done"
